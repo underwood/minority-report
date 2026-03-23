@@ -74,6 +74,19 @@ git diff main...$ARGS
 
 Include the commit messages and PR metadata (if available) in the context passed to precogs — this tells them the *intent* behind the changes, not just *what* changed.
 
+### Multi-Repo Detection
+
+If the project context (Step 1) indicates a multi-repo setup, check whether the same branch name exists in sibling repos:
+
+```bash
+# For each sibling repo in the project directory:
+# Check if the branch exists and has changes vs main
+git -C <sibling-repo-path> rev-parse --verify <branch-name> 2>/dev/null
+git -C <sibling-repo-path> diff main...<branch-name> --stat 2>/dev/null
+```
+
+If the same branch has changes in multiple repos, **combine all diffs into a single review**. Label each section clearly (e.g., `[backend] apps/orchestrator/service.py`, `[frontend] src/hooks/usePresetData.ts`). This is critical for catching cross-repo mismatches — a scoring scale change in the backend that breaks the frontend display is invisible if you only review one repo.
+
 ### Guard Rails
 
 - **Empty diff**: Report "Nothing to review — no changes found compared to main." and stop.
@@ -159,6 +172,7 @@ Launch all 3 precog agents **in parallel** using the Agent tool. Each precog get
 > - Upstream data source verification: If the diff changes how data is normalized or stored, verify the upstream producer (e.g., LLM prompts, external APIs) actually emits data in the expected format.
 > - Rewritten functions without tests: If a function is materially rewritten (logic changed, defaults changed, branches added/removed), flag it if there are no unit tests covering the new behavior. Especially functions at system boundaries (normalization, parsing, validation).
 > - Data migration for scale/format changes: If a validator constraint or storage format changes, flag whether existing persisted data needs a migration. Old and new data coexisting at incompatible scales is a silent corruption risk.
+> - Functional flow verification: For UI changes, trace the end-to-end user flow the diff affects. If the diff builds data objects with IDs, verify those IDs match what the consuming components query/render (e.g., DOM data attributes, map lookups, querySelector selectors). If the diff hides or disables a UI element, verify the underlying handler also guards against being called. Check that cross-component references (highlight → transcript, question → segment) use matching ID schemes.
 >
 > **Output format — return ONLY a structured list of findings:**
 > ```
