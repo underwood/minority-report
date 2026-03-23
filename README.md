@@ -171,6 +171,26 @@ Real examples from production use:
 
 **Key difference**: BugBot and Anthropic's plugin filter out single-reviewer findings to reduce noise. Minority Report keeps them — because sometimes the dissenting opinion is the one that matters.
 
+### How is this different from Claude Code's built-in `/code-review`?
+
+Claude Code ships with a `/code-review` command (via the [code-review plugin](https://github.com/anthropics/claude-code/blob/main/plugins/code-review/README.md)). It's a great tool — but it solves a different problem.
+
+**`/code-review` is optimized for automation and noise reduction.** It runs 5 Sonnet agents, scores findings on a 0-100 confidence scale, and filters out anything below the threshold (default 80). It's designed to run on every PR via GitHub Actions. It catches routine issues — CLAUDE.md compliance, obvious bugs, code comment quality.
+
+**`/mr` is optimized for depth and discovery.** Three specialized agents explore your codebase beyond the diff using tools (grep, read, glob). They check if the code follows existing patterns, verify that upstream data sources match downstream consumers, and flag cross-repo impact. The minority report concept surfaces single-reviewer findings rather than filtering them out.
+
+In practice:
+
+| | `/code-review` | `/mr` |
+|---|---|---|
+| **Best for** | Every PR, automated via CI | Important PRs, run manually before pushing |
+| **Finds** | Obvious bugs, style issues, compliance | Architectural mismatches, cross-system bugs, pattern violations |
+| **Approach** | Reviews the diff | Reviews the diff *in the context of the codebase* |
+| **Single-reviewer findings** | Filtered out (below threshold) | Highlighted as minority reports |
+| **Setup** | GitHub App + plugin install | Copy one file |
+
+They're complementary. Use `/code-review` on GitHub Actions for automated coverage on every PR. Use `/mr` locally on the PRs that matter — the ones touching multiple systems, changing data formats, or rewriting core logic.
+
 ---
 
 ## Customization
