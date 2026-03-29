@@ -7,8 +7,8 @@ When all three precogs agree, confidence is high. When only one sees something t
 ## Arguments
 
 `$ARGUMENTS` — one of:
-- *(empty)* — review the current branch vs its base (main)
-- `<branch-name>` — review that branch vs main
+- *(empty)* — review the current branch vs the base branch (auto-detected, defaults to main)
+- `<branch-name>` — review that branch vs the base branch
 - `<number>` — review GitHub PR #N via `gh pr diff`
 
 ---
@@ -47,29 +47,33 @@ This context block replaces `{{PROJECT_CONTEXT}}` in the precog prompts below.
 
 Determine what to diff based on `$ARGUMENTS`:
 
-```
+First, detect the base branch:
+```bash
 ARGS="$ARGUMENTS"
+BASE_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
+# Falls back to "main" if origin/HEAD is not set
+BASE_BRANCH=${BASE_BRANCH:-main}
 ```
 
-**If ARGS is empty or blank**: diff current branch against main
+**If ARGS is empty or blank**: diff current branch against the base branch
 ```bash
-git log main...HEAD --oneline
-git diff main...HEAD --stat
-git diff main...HEAD
+git log $BASE_BRANCH..HEAD --oneline
+git diff $BASE_BRANCH...HEAD --stat
+git diff $BASE_BRANCH...HEAD
 ```
 
 **If ARGS is a number (PR)**: use gh CLI
 ```bash
-gh pr view $ARGS --json title,body,labels,author 2>/dev/null
-gh pr diff $ARGS --stat 2>/dev/null || echo "DIFF_ERROR"
-gh pr diff $ARGS 2>/dev/null || echo "DIFF_ERROR"
+gh pr view $ARGS --json title,body,labels,author
+gh pr diff $ARGS --stat || echo "DIFF_ERROR: $(gh pr diff $ARGS --stat 2>&1)"
+gh pr diff $ARGS || echo "DIFF_ERROR: $(gh pr diff $ARGS 2>&1)"
 ```
 
-**If ARGS is a branch name**: diff that branch against main
+**If ARGS is a branch name**: diff that branch against the base branch
 ```bash
-git log main...$ARGS --oneline
-git diff main...$ARGS --stat
-git diff main...$ARGS
+git log $BASE_BRANCH..$ARGS --oneline
+git diff $BASE_BRANCH...$ARGS --stat
+git diff $BASE_BRANCH...$ARGS
 ```
 
 Include the commit messages and PR metadata (if available) in the context passed to precogs — this tells them the *intent* behind the changes, not just *what* changed.
@@ -80,16 +84,16 @@ If the project context (Step 1) indicates a multi-repo setup, check whether the 
 
 ```bash
 # For each sibling repo in the project directory:
-# Check if the branch exists and has changes vs main
+# Check if the branch exists and has changes vs the base branch
 git -C <sibling-repo-path> rev-parse --verify <branch-name> 2>/dev/null
-git -C <sibling-repo-path> diff main...<branch-name> --stat 2>/dev/null
+git -C <sibling-repo-path> diff $BASE_BRANCH...<branch-name> --stat 2>/dev/null
 ```
 
 If the same branch has changes in multiple repos, **combine all diffs into a single review**. Label each section clearly (e.g., `[backend] apps/orchestrator/service.py`, `[frontend] src/hooks/usePresetData.ts`). This is critical for catching cross-repo mismatches — a scoring scale change in the backend that breaks the frontend display is invisible if you only review one repo.
 
 ### Guard Rails
 
-- **Empty diff**: Report "Nothing to review — no changes found compared to main." and stop.
+- **Empty diff**: Report "Nothing to review — no changes found compared to $BASE_BRANCH." and stop.
 - **Very large diff (>3000 lines)**: Warn the user and offer options: (1) review all files, (2) review only high-risk files (those touching auth, payments, migrations, security, or configuration), or (3) specific files the user names.
 - **Diff errors**: If `gh pr diff` fails, tell the user the PR number may be invalid or `gh` is not authenticated.
 
@@ -104,6 +108,8 @@ Launch all 3 precog agents **in parallel** using the Agent tool. Each precog get
 > You are a security-focused code reviewer. Review this diff for security issues ONLY.
 >
 > {{PROJECT_CONTEXT}}
+>
+> You have full access to the codebase via file reading tools. When you spot a potential issue in the diff, **read the surrounding source files** to verify it before assigning a high confidence score (9-10 requires verification beyond the diff alone).
 >
 > **Review for:**
 > - Injection attacks (SQL, command, XSS, SSRF)
@@ -151,6 +157,8 @@ Launch all 3 precog agents **in parallel** using the Agent tool. Each precog get
 > You are a logic and correctness code reviewer. Review this diff for bugs and correctness issues ONLY.
 >
 > {{PROJECT_CONTEXT}}
+>
+> You have full access to the codebase via file reading tools. When you spot a potential issue in the diff, **read the surrounding source files** to verify it before assigning a high confidence score (9-10 requires verification beyond the diff alone).
 >
 > **Review for:**
 > - Logic errors, off-by-one errors, wrong conditions
@@ -204,6 +212,8 @@ Launch all 3 precog agents **in parallel** using the Agent tool. Each precog get
 > You are an architecture, performance, and code quality reviewer. Review this diff for design, performance, and quality issues ONLY.
 >
 > {{PROJECT_CONTEXT}}
+>
+> You have full access to the codebase via file reading tools. When you spot a potential issue in the diff, **read the surrounding source files and project structure** to verify it before assigning a high confidence score (9-10 requires verification beyond the diff alone).
 >
 > **Architecture & Quality — review for:**
 > - Violations of existing patterns (e.g., bypassing established service layers, direct DB queries instead of repository pattern)
