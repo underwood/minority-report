@@ -126,6 +126,9 @@ Launch all 3 precog agents **in parallel** using the Agent tool. Each precog get
 > - Mass assignment / over-posting (accepting and persisting more fields than intended from request bodies)
 > - Missing rate limiting or DoS vectors on new endpoints (unbounded operations triggered by a single request)
 > - Insecure randomness (using Math.random or non-cryptographic sources for tokens, session IDs, or security-sensitive values)
+> - **Paired controls**: any change that loosens an existing security property (cookie SameSite tightening → loosening, CORS allowlist widening, removing CSRF tokens, switching from POST to GET on mutating endpoints, etc.) without adding the compensating control in the same diff. The compensating control is part of the change, not optional follow-up.
+>
+> **Severity floor**: any *actual* security issue (real exploit path, even if bounded in impact) must be **HIGH or CRITICAL**. Do not downgrade real vulnerabilities to MEDIUM/LOW because the impact "feels minor" — a forced logout, forced token rotation, or coerced redirect to a same-origin path is still a security regression and must be fixed before merge. Reserve LOW/INFO strictly for defense-in-depth advisories that don't represent an actual exploit path (e.g. "consider adding rate limiting", "log this for observability", "magic number could be a constant").
 >
 > **Output format — return ONLY a structured list of findings:**
 > ```
@@ -170,6 +173,7 @@ Launch all 3 precog agents **in parallel** using the Agent tool. Each precog get
 > - State management bugs (stale closures, missing dependencies in effects)
 > - Database issues (N+1 queries, missing transactions, incorrect joins)
 > - API contract mismatches (consumer expects different shape than producer returns)
+> - Double encoding / double decoding: any time a value is encoded that the source already produced in encoded form (e.g. `encodeURIComponent(window.location.pathname)` — pathname is already URL-encoded by the browser; `urlencode(request.url.path)`; `JSON.stringify(jsonString)`; base64-encoding a base64 string). Check whether the upstream producer hands the value to you already encoded — if so, encoding again breaks the round-trip even when ASCII-only test data hides the bug (`/foo` → `/foo` looks fine; `/foo bar` → `/foo%2520bar` breaks). Also check the symmetric case: any value decoded twice on the consumer side.
 > - Migration issues (irreversible changes, data loss risk)
 > - Resource leaks (unclosed database connections, file handles, streams, WebSocket connections, or event listeners that are never cleaned up)
 > - Missing `await` on async calls (promises that are silently dropped, leading to unhandled rejections or operations that appear to complete but never actually execute)
@@ -289,7 +293,12 @@ Once all 3 precogs have reported their visions, **Anderton** synthesizes them in
 
 6. **Dash/Arthur overlap**: Both precogs intentionally cover cross-repo impact, test coverage, and data migration. When they both flag the same structural issue, it's expected consensus — weight it slightly lower than Agatha+Any consensus (which signals a genuine cross-domain concern).
 
-7. **Anderton's recommendation**:
+7. **Security findings are blockers — never downplay Agatha**: any Agatha finding describing an actual exploit path (severity HIGH or CRITICAL, or any finding whose Scenario describes a real attacker action and outcome) at confidence ≥ 6 is must-fix and forces **REQUEST CHANGES**, regardless of whether other precogs concur. Single-precog status does not downgrade a security finding — security expertise is the relevant lens for security code, and consensus across non-security precogs is not a prerequisite for treating it as blocking. Do not route security findings into the "Minority Reports — investigate before dismissing" section as if they were optional; they belong at the top of the report under their own **Blocking — Security** heading.
+
+8. **Paired controls**: when a diff loosens a security property (e.g. cookie SameSite tightened → loosened, CORS allowlist widened, CSRF token removed, cookie path scope widened, auth requirement weakened), the compensating control must ship in the same diff. If Agatha flags a missing compensating control, treat it as HIGH/blocking even if she labeled it MEDIUM — the regression-without-mitigation is the bug.
+
+9. **Anderton's recommendation**:
+   - Any Agatha finding with confidence >= 6 that describes a real exploit path → **REQUEST CHANGES**
    - Any CRITICAL finding with confidence >= 7 → **REQUEST CHANGES**
    - 2+ HIGH findings with confidence >= 7 → **REQUEST CHANGES**
    - 1 HIGH or multiple MEDIUM with confidence >= 6 → **APPROVE WITH SUGGESTIONS**
@@ -308,11 +317,17 @@ Once all 3 precogs have reported their visions, **Anderton** synthesizes them in
 
 ---
 
+### 🔴 Blocking — Security (must fix before merge)
+
+> Any Agatha finding describing a real exploit path, regardless of whether other precogs concur. Single-precog status does not downgrade these — security expertise is the relevant lens for security code. Omit this section only if Agatha returned NO_FINDINGS or only POSITIVE / defense-in-depth notes.
+
+<all Agatha findings with confidence >= 6 that describe a real exploit path or a paired-control regression, attributed [Agatha], with severity + confidence>
+
 ### Previsions — Consensus (2+ precogs agree)
 
 > All precogs saw this future — highest confidence.
 
-<merged findings with [Agatha + Arthur] attribution, confidence score, severity>
+<merged findings with [Agatha + Arthur] attribution, confidence score, severity. Exclude any Agatha findings already shown in the Security section above.>
 
 ### Minority Reports — Single Precog (confidence >= 7)
 

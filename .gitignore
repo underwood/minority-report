@@ -2,3 +2,6 @@
 *.swp
 *.swo
 *~
+
+# Per-clone Claude Code settings — not part of the skill itself.
+.claude/
